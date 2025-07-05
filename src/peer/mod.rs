@@ -49,6 +49,38 @@ impl Peer {
         })
     }
 
+    pub async fn new_channel(
+        guid: OwnedGuid,
+        id: usize,
+        skip_hello: bool,
+    ) -> Result<(Self, Connection)> {
+        let (our_end, peer_end) = connection::socket::Channel::pair();
+
+        let unique_name = OwnedUniqueName::try_from(format!(":busd.{id}")).unwrap();
+        let conn = connection::Builder::authenticated_socket(our_end, guid.clone())?
+            .p2p()
+            .build()
+            .await?;
+        trace!("created: {:?}", conn);
+
+        let builder = connection::Builder::authenticated_socket(peer_end, guid.clone())?;
+        let peer_conn = if skip_hello { builder.p2p() } else { builder }
+            .build()
+            .await?;
+        peer_conn.set_unique_name(unique_name.clone())?;
+
+        Ok((
+            Self {
+                conn,
+                unique_name,
+                match_rules: MatchRules::default(),
+                greeted: false,
+                canceled_event: Event::new(),
+            },
+            peer_conn,
+        ))
+    }
+
     // This the the bus itself, serving the FDO D-Bus API.
     pub async fn new_us(conn: Connection) -> Self {
         let unique_name = OwnedUniqueName::try_from(fdo::BUS_NAME).unwrap();

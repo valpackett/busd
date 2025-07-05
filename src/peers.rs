@@ -73,6 +73,34 @@ impl Peers {
         Ok(())
     }
 
+    pub async fn add_channel(
+        self: &Arc<Self>,
+        guid: &OwnedGuid,
+        id: usize,
+        skip_hello: bool,
+    ) -> Result<zbus::Connection> {
+        let mut peers = self.peers_mut().await;
+        let (peer, conn) = Peer::new_channel(guid.clone(), id, skip_hello).await?;
+        let unique_name = peer.unique_name().clone();
+        match peers.get(&unique_name) {
+            Some(peer) => panic!(
+                "Unique name `{}` re-used. We're in deep trouble if this happens",
+                peer.unique_name()
+            ),
+            None => {
+                let peer_stream = peer.stream();
+                let listener = peer.listen_cancellation();
+                tokio::spawn(
+                    self.clone()
+                        .serve_peer(peer_stream, listener, unique_name.clone()),
+                );
+                peers.insert(unique_name.clone(), peer);
+            }
+        }
+
+        Ok(conn)
+    }
+
     pub async fn add_us(self: &Arc<Self>, conn: zbus::Connection) {
         let mut peers = self.peers_mut().await;
         let peer = Peer::new_us(conn).await;
