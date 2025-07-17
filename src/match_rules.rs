@@ -79,3 +79,47 @@ impl MatchRules {
         self.0.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use zbus::{
+        fdo::RequestNameFlags,
+        names::{UniqueName, WellKnownName},
+        MatchRule,
+    };
+
+    use crate::name_registry::NameRegistry;
+
+    #[tokio::test]
+    async fn test_well_known_sender() -> anyhow::Result<()> {
+        let mut rules = super::MatchRules::default();
+        rules.add(
+            MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .sender("org.freedesktop.portal.Desktop")?
+                .build()
+                .into(),
+        );
+        let mut registry = NameRegistry::default();
+        registry
+            .request_name(
+                WellKnownName::from_static_str("org.freedesktop.portal.Desktop")?,
+                UniqueName::from_static_str(":test.1")?,
+                RequestNameFlags::ReplaceExisting.into(),
+            )
+            .await;
+        assert!(!rules.matches(
+            &zbus::Message::signal("/what/Ever", "what.Ever", "Ding")?
+                .sender(":test.2")?
+                .build(&())?,
+            &registry,
+        ));
+        assert!(rules.matches(
+            &zbus::Message::signal("/what/Ever", "what.Ever", "Ding")?
+                .sender(":test.1")?
+                .build(&())?,
+            &registry,
+        ));
+        Ok(())
+    }
+}
